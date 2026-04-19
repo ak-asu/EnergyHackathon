@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { useAgent } from '../hooks/useAgent'
 import MarkdownRenderer from './MarkdownRenderer'
+import ContextChipBar from './ContextChipBar'
 
 function CitationChip({ text }) {
   const isCoord = /^-?\d+\.\d+,-?\d+\.\d+/.test(text)
@@ -13,9 +13,7 @@ function Message({ role, text, citations }) {
   return (
     <div className={`chat-message chat-message--${role}`}>
       <div className="chat-bubble">
-        {role === 'assistant'
-          ? <MarkdownRenderer>{text}</MarkdownRenderer>
-          : text}
+        {role === 'assistant' ? <MarkdownRenderer>{text}</MarkdownRenderer> : text}
       </div>
       {citations && citations.length > 0 && (
         <div className="chat-citations">
@@ -26,10 +24,9 @@ function Message({ role, text, citations }) {
   )
 }
 
-export default function AgentChat({ context }) {
+export default function AgentChat({ context, chips = [], onRemoveChip, ask, reset, tokens, citations, status }) {
   const [input, setInput] = useState('')
   const [history, setHistory] = useState([])
-  const { tokens, citations, status, ask, reset } = useAgent()
   const endRef = useRef(null)
 
   useEffect(() => {
@@ -42,7 +39,12 @@ export default function AgentChat({ context }) {
     setHistory(h => [...h, { role: 'user', text: q }])
     setInput('')
     reset()
-    ask(q, context)
+    const enrichedContext = {
+      ...context,
+      chips: chips.map(c => ({ type: c.type, payload: c.payload })),
+      region: chips.find(c => c.type === 'region')?.payload ?? null,
+    }
+    ask(q, enrichedContext)
   }
 
   const onKey = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }
@@ -82,6 +84,8 @@ export default function AgentChat({ context }) {
         <div ref={endRef} />
       </div>
 
+      <ContextChipBar chips={chips} onRemove={onRemoveChip || (() => {})} />
+
       <div className="chat-input-row">
         <textarea
           className="chat-input"
@@ -90,6 +94,7 @@ export default function AgentChat({ context }) {
           onKeyDown={onKey}
           placeholder="Ask about sites, timing, stress scenarios, or economics…"
           rows={2}
+          disabled={status === 'loading' || status === 'streaming'}
         />
         <button
           className="chat-send-btn"

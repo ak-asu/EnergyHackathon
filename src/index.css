@@ -984,3 +984,84 @@ footer {
   padding: 3px 0; color: #7A6E5E;
 }
 .popup-table td:last-child { color: #F4EFE4; text-align: right; }
+
+/* ── Scorecard Panel ─────────────────────────────────────────── */
+.scorecard-panel {
+  position: fixed; right: 0; top: 0; bottom: 0; width: 380px;
+  background: #141210; border-left: 1px solid #2a2520;
+  z-index: 1000; overflow-y: auto; padding: 24px;
+  box-shadow: -8px 0 32px rgba(0,0,0,0.5);
+}
+.scorecard-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.scorecard-panel-loc { font-family: monospace; color: #9E9589; font-size: 12px; }
+.scorecard-panel-close { background: none; border: none; color: #9E9589; cursor: pointer; font-size: 18px; }
+.scorecard-tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+.scorecard-tab { background: #1f1c18; border: 1px solid #2a2520; color: #9E9589;
+  padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.scorecard-tab--active { background: #2a2520; color: #F5F0E8; border-color: #3A8A65; }
+.scorecard-disqualified { text-align: center; padding: 40px 0; }
+.scorecard-dq-icon { font-size: 48px; margin-bottom: 12px; }
+.scorecard-dq-reason { color: #EF4444; font-size: 14px; }
+.scorecard-loading { color: #9E9589; text-align: center; padding: 40px 0; }
+
+/* Gauge */
+.gauge-wrap { text-align: center; margin-bottom: 16px; }
+.gauge-label { color: #9E9589; font-size: 12px; margin-top: -8px; }
+
+/* Score bars */
+.score-bars { margin-bottom: 16px; }
+.score-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.score-bar-label { width: 45px; font-size: 12px; color: #9E9589; }
+.score-bar-track { flex: 1; height: 8px; background: #2a2520; border-radius: 4px; overflow: hidden; }
+.score-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+.score-bar-val { width: 28px; font-size: 12px; color: #F5F0E8; text-align: right; }
+
+/* Regime badge */
+.regime-badge { display: inline-block; padding: 4px 10px; border-radius: 12px;
+  font-size: 12px; margin-bottom: 16px; background: #1f1c18; }
+
+/* NPV */
+.npv-row { display: flex; gap: 8px; margin-bottom: 16px; }
+.npv-cell { flex: 1; text-align: center; background: #1f1c18; border-radius: 8px; padding: 10px; }
+.npv-val { font-size: 16px; font-weight: 700; color: #22C55E; }
+.npv-val--mid { color: #F5F0E8; }
+.npv-lbl { font-size: 10px; color: #9E9589; margin-top: 2px; }
+
+/* Narrative */
+.narrative-box { font-size: 13px; line-height: 1.6; color: #C8C0B4;
+  background: #1a1714; border-radius: 8px; padding: 12px; min-height: 60px; }
+
+/* Economics tab */
+.economics-tab { padding: 4px 0; }
+.econ-title { font-size: 13px; color: #9E9589; margin-bottom: 8px; }
+.sliders { margin: 12px 0; }
+.slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.slider-row label { width: 140px; font-size: 12px; color: #9E9589; }
+.slider-row input { flex: 1; accent-color: #3A8A65; }
+.cost-table td { padding: 4px 8px; font-size: 12px; }
+.cost-table td:last-child { color: #F5F0E8; text-align: right; }
+.cost-breakdown h4 { font-size: 13px; color: #9E9589; margin: 12px 0 6px; }
+
+/* Risk tab */
+.risk-tab { padding: 4px 0; }
+.risk-tab h4 { font-size: 13px; color: #9E9589; margin-bottom: 8px; }
+.stress-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.stress-btn { background: #1f1c18; border: 1px solid #2a2520; color: #9E9589;
+  padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.stress-btn--active { border-color: #E85D04; color: #E85D04; }
+.stress-result { background: #1f1c18; border-radius: 8px; padding: 10px;
+  display: flex; gap: 16px; font-size: 13px; color: #C8C0B4; margin-bottom: 12px; }
+
+/* Bottom strip */
+.bottom-strip { position: sticky; bottom: 0; background: #0C0B09ee;
+  border-top: 1px solid #2a2520; padding: 10px 24px;
+  display: flex; gap: 24px; align-items: center; z-index: 500; }
+.bs-regime { display: flex; align-items: center; gap: 6px; }
+.bs-regime-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.bs-regime-text { font-size: 12px; color: #9E9589; }
+.bs-lmp-ticker { display: flex; gap: 16px; }
+.bs-lmp-item { font-size: 12px; color: #9E9589; }
+.bs-lmp-item b { color: #F5F0E8; }
+.bs-fuel-mix { display: flex; gap: 16px; margin-left: auto; }
+.bs-fuel-mix span { font-size: 12px; color: #9E9589; }
+.bs-fuel-mix b { color: #F5F0E8; }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
 import StatsBar from './components/StatsBar'
@@ -13,8 +13,20 @@ import DataQuality from './components/DataQuality'
 import Testimonials from './components/Testimonials'
 import CTA from './components/CTA'
 import Footer from './components/Footer'
+import ScorecardPanel from './components/ScorecardPanel'
+import BottomStrip from './components/BottomStrip'
+import { useEvaluate } from './hooks/useEvaluate'
 
 export default function App() {
+  const { scorecard, narrative, status, evaluate, reset } = useEvaluate()
+  const [panelOpen, setPanelOpen] = useState(false)
+
+  useEffect(() => {
+    const handler = e => { evaluate(e.detail.lat, e.detail.lon); setPanelOpen(true) }
+    window.addEventListener('collide:evaluate', handler)
+    return () => window.removeEventListener('collide:evaluate', handler)
+  }, [evaluate])
+
   useEffect(() => {
     // Single reveal observer for all .reveal elements
     const revealObserver = new IntersectionObserver((entries) => {
@@ -60,6 +72,7 @@ export default function App() {
       <StatsBar />
       <Dashboard />
       <SiteMap />
+      <BottomStrip />
       <LiveTicker />
       <Scoring />
       <Workflow />
@@ -69,6 +82,14 @@ export default function App() {
       <Testimonials />
       <CTA />
       <Footer />
+      {panelOpen && (
+        <ScorecardPanel
+          scorecard={scorecard}
+          narrative={narrative}
+          status={status}
+          onClose={() => { reset(); setPanelOpen(false) }}
+        />
+      )}
     </>
   )
 }

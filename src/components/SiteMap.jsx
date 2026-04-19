@@ -9,6 +9,7 @@ import {
 } from 'react-leaflet'
 import L from 'leaflet'
 import { useSites } from '../hooks/useApi'
+import { useOptimize } from '../hooks/useOptimize'
 
 function scoreToColor(v) {
   if (v >= 0.82) return '#3A8A65'
@@ -112,6 +113,16 @@ function AreaSelectInteraction({ active, onRubberChange, onCommit }) {
   return null
 }
 
+function MapClickHandler({ onMapClick }) {
+  const map = useMap()
+  useEffect(() => {
+    const handler = e => onMapClick(e.latlng.lat, e.latlng.lng)
+    map.on('click', handler)
+    return () => map.off('click', handler)
+  }, [map, onMapClick])
+  return null
+}
+
 function sitesInBounds(sites, bounds) {
   if (!bounds) return []
   return sites.filter(s => bounds.contains(L.latLng(s.lat, s.lng)))
@@ -122,6 +133,11 @@ export default function SiteMap() {
   const [selectMode, setSelectMode] = useState(false)
   const [rubberBounds, setRubberBounds] = useState(null)
   const [committedBounds, setCommittedBounds] = useState(null)
+  const { optimize, optimal, status: optStatus, progress, reset: resetOpt } = useOptimize()
+
+  const handleMapClick = useCallback((lat, lon) => {
+    window.dispatchEvent(new CustomEvent('collide:evaluate', { detail: { lat, lon } }))
+  }, [])
 
   const onRubberChange = useCallback(b => {
     setRubberBounds(b)
@@ -189,6 +205,18 @@ export default function SiteMap() {
                 Clear area
               </button>
             )}
+            <button
+              type="button"
+              className={`sitemap-tool-btn${optStatus === 'running' ? ' sitemap-tool-btn--active' : ''}`}
+              onClick={() => {
+                if (!committedBounds) return alert('Draw a region first')
+                const sw = committedBounds.getSouthWest()
+                const ne = committedBounds.getNorthEast()
+                optimize({ sw: { lat: sw.lat, lon: sw.lng }, ne: { lat: ne.lat, lon: ne.lng } })
+              }}
+            >
+              {optStatus === 'running' ? 'Searching…' : 'Find Best Site'}
+            </button>
           </div>
           {selectMode && (
             <p className="sitemap-select-hint">Click and drag on the map to draw a region. Press Esc to cancel.</p>
@@ -214,6 +242,7 @@ export default function SiteMap() {
         scrollWheelZoom={false}
       >
         <FitBounds sites={sites} />
+        <MapClickHandler onMapClick={handleMapClick} />
         <AreaSelectInteraction active={selectMode} onRubberChange={onRubberChange} onCommit={onCommit} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
@@ -236,6 +265,19 @@ export default function SiteMap() {
               fillOpacity: 0.08,
             }}
           />
+        )}
+        {optimal && (
+          <CircleMarker
+            center={[optimal.lat, optimal.lon]}
+            radius={18}
+            pathOptions={{ color: '#22C55E', fillColor: '#22C55E', fillOpacity: 0.9, weight: 3 }}
+          >
+            <Popup>
+              <b>Optimal Site</b><br />
+              Score: {Math.round(optimal.composite_score * 100)}/100<br />
+              ({optimal.lat.toFixed(4)}, {optimal.lon.toFixed(4)})
+            </Popup>
+          </CircleMarker>
         )}
         {sites.map(site => (
           <CircleMarker

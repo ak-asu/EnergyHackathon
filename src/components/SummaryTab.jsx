@@ -1,0 +1,74 @@
+function ScoreBar({ label, value, color }) {
+  return (
+    <div className="score-bar-row">
+      <span className="score-bar-label">{label}</span>
+      <div className="score-bar-track">
+        <div className="score-bar-fill" style={{ width: `${value * 100}%`, background: color }} />
+      </div>
+      <span className="score-bar-val">{Math.round(value * 100)}</span>
+    </div>
+  )
+}
+
+function Gauge({ value }) {
+  const pct = Math.round((value ?? 0) * 100)
+  const color = pct >= 75 ? '#22C55E' : pct >= 50 ? '#F59E0B' : '#EF4444'
+  return (
+    <div className="gauge-wrap">
+      <svg viewBox="0 0 120 70" width="160">
+        <path d="M10,65 A55,55 0 0,1 110,65" fill="none" stroke="#2a2a2a" strokeWidth="12" />
+        <path
+          d="M10,65 A55,55 0 0,1 110,65"
+          fill="none" stroke={color} strokeWidth="12"
+          strokeDasharray={`${(pct / 100) * 172} 172`}
+        />
+        <text x="60" y="62" textAnchor="middle" fill={color} fontSize="22" fontWeight="bold">{pct}</text>
+      </svg>
+      <div className="gauge-label">Composite Score</div>
+    </div>
+  )
+}
+
+export default function SummaryTab({ scorecard: sc, narrative, status }) {
+  if (!sc) return <div className="scorecard-loading">Evaluating coordinate…</div>
+
+  const cost = sc.cost
+  return (
+    <div className="summary-tab">
+      <Gauge value={sc.composite_score} />
+
+      <div className="score-bars">
+        <ScoreBar label="Land"  value={sc.land_score}  color="#3A8A65" />
+        <ScoreBar label="Gas"   value={sc.gas_score}   color="#E85D04" />
+        <ScoreBar label="Power" value={sc.power_score} color="#0D9488" />
+      </div>
+
+      <div className="regime-badge" data-regime={sc.regime}>
+        {sc.regime === 'stress_scarcity'  && '🔴 Stress / Scarcity'}
+        {sc.regime === 'wind_curtailment' && '🟡 Wind Curtailment'}
+        {sc.regime === 'normal'           && '🟢 Normal'}
+      </div>
+
+      {cost && (
+        <div className="npv-row">
+          <div className="npv-cell">
+            <div className="npv-val">${cost.npv_p10_m.toFixed(0)}M</div>
+            <div className="npv-lbl">P10 NPV</div>
+          </div>
+          <div className="npv-cell">
+            <div className="npv-val npv-val--mid">${cost.npv_p50_m.toFixed(0)}M</div>
+            <div className="npv-lbl">P50 NPV</div>
+          </div>
+          <div className="npv-cell">
+            <div className="npv-val">${cost.npv_p90_m.toFixed(0)}M</div>
+            <div className="npv-lbl">P90 NPV</div>
+          </div>
+        </div>
+      )}
+
+      <div className="narrative-box">
+        {narrative || (status === 'streaming' ? '…' : '')}
+      </div>
+    </div>
+  )
+}

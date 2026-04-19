@@ -6,7 +6,7 @@ from backend.scoring.sub_b import GAS_HUB_PRICES
 GRID_LMP_REF = 42.0
 
 # Modern gas turbine heat rate (MMBtu/MWh)
-HEAT_RATE = 7.5
+HEAT_RATE = 8.5  # CCGT standard (was 7.5 — incorrect per spec)
 
 # Fixed O&M proxy ($/MWh)
 OM_COST = 3.50

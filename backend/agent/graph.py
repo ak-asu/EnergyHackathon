@@ -7,6 +7,8 @@ from langgraph.graph import StateGraph, END
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from typing import TypedDict
+import json
+import re
 from backend.agent.tools import (
     evaluate_site, compare_sites,
     get_news_digest, get_lmp_forecast, run_monte_carlo, web_search,
@@ -15,6 +17,8 @@ from backend.config import get_settings
 
 ALL_TOOLS = [evaluate_site, compare_sites, get_news_digest,
              get_lmp_forecast, run_monte_carlo, web_search]
+
+_ANTHROPIC_DISABLED_REASON = ""
 
 _INTENT_SYSTEM = """Classify the user query into exactly one intent.
 Reply with a JSON object with two fields:
@@ -66,28 +70,86 @@ class AgentState(TypedDict):
 
 
 def _get_llm(bind_tools=False):
+    global _ANTHROPIC_DISABLED_REASON
     settings = get_settings()
-    llm = ChatAnthropic(model='claude-sonnet-4-6', api_key=settings.anthropic_api_key,
+    api_key = (settings.anthropic_api_key or "").strip()
+    if _ANTHROPIC_DISABLED_REASON:
+        return None
+    if not api_key or not api_key.startswith('sk-ant-'):
+        return None
+    llm = ChatAnthropic(model='claude-sonnet-4-6', api_key=api_key,
                         max_tokens=1024)
     return llm.bind_tools(ALL_TOOLS) if bind_tools else llm
+
+
+def _disable_anthropic(reason: str) -> None:
+    global _ANTHROPIC_DISABLED_REASON
+    _ANTHROPIC_DISABLED_REASON = reason[:200]
+
+
+def _heuristic_intent(query: str) -> tuple[str, bool]:
+    q = (query or '').lower()
+    needs_web = any(tok in q for tok in ('current', 'latest', 'today', 'news', 'headline'))
+
+    if any(tok in q for tok in ('max sites', 'min composite', 'weights', 'gas under', 'power cost', 'ercot sites')):
+        return 'config', needs_web
+    if 'compare' in q or re.search(r'-?\d+\.?\d*\s*,\s*-?\d+\.?\d*', q):
+        return 'compare', needs_web
+    if any(tok in q for tok in ('stress', 'spike', 'scenario', 'what happens if')):
+        return 'stress_test', needs_web
+    if any(tok in q for tok in ('timing', 'build now', 'wait', 'regime', 'briefing', 'opportunity')):
+        return 'timing', needs_web
+    return 'explanation', needs_web
+
+
+def _fallback_synthesis(state: AgentState, reason: str = '') -> str:
+    results = state.get('tool_results', [])
+    citations = [c for c in state.get('citations', []) if c][:6]
+
+    lines = []
+    if reason:
+        lines.append(f"Agent model unavailable ({reason}).")
+    else:
+        lines.append("Agent model unavailable. Returning structured analysis from available tools.")
+
+    if results:
+        lines.append("\nTop available signals:")
+        for item in results[:3]:
+            lines.append(f"- {json.dumps(item, default=str)[:320]}")
+    else:
+        lines.append("\nNo tool results were available for synthesis.")
+
+    if citations:
+        lines.append("\nCitations:")
+        for c in citations:
+            lines.append(f"- {c}")
+
+    if _ANTHROPIC_DISABLED_REASON:
+        lines.append("\nSet a valid ANTHROPIC_API_KEY to re-enable narrative synthesis.")
+
+    return '\n'.join(lines)
 
 
 # ── Node: parse_intent ──────────────────────────────────────────────────────
 
 def parse_intent_node(state: AgentState) -> dict:
-    import json
     llm = _get_llm()
-    resp = llm.invoke([
-        SystemMessage(content=_INTENT_SYSTEM),
-        HumanMessage(content=state['query']),
-    ])
+    if llm is None:
+        intent, needs_web = _heuristic_intent(state.get('query', ''))
+        return {'intent': intent, 'needs_web_search': needs_web}
+
     try:
+        resp = llm.invoke([
+            SystemMessage(content=_INTENT_SYSTEM),
+            HumanMessage(content=state['query']),
+        ])
         parsed = json.loads(resp.content)
         intent = parsed.get('intent', 'explanation')
         needs_web = parsed.get('needs_web_search', False)
-    except Exception:
-        intent = 'explanation'
-        needs_web = False
+    except Exception as exc:
+        if '401' in str(exc):
+            _disable_anthropic('Anthropic authentication failed')
+        intent, needs_web = _heuristic_intent(state.get('query', ''))
     return {'intent': intent, 'needs_web_search': needs_web}
 
 
@@ -249,17 +311,24 @@ def explanation_node(state: AgentState) -> dict:
 
 def config_node(state: AgentState) -> dict:
     """Extract config changes from natural language and return them as tool_results."""
-    import json
     llm = _get_llm()
-    resp = llm.invoke([
-        SystemMessage(content=_CONFIG_EXTRACT_SYSTEM),
-        HumanMessage(content=state['query']),
-    ])
+    if llm is None:
+        return {
+            'tool_results': [{'config_update': {}}],
+            'citations': ['Config parsing unavailable: ANTHROPIC_API_KEY is missing or invalid'],
+        }
+
     try:
+        resp = llm.invoke([
+            SystemMessage(content=_CONFIG_EXTRACT_SYSTEM),
+            HumanMessage(content=state['query']),
+        ])
         config_update = json.loads(resp.content)
         if not isinstance(config_update, dict):
             config_update = {}
-    except Exception:
+    except Exception as exc:
+        if '401' in str(exc):
+            _disable_anthropic('Anthropic authentication failed')
         config_update = {}
 
     citation = ('Config updated: ' + ', '.join(f'{k}={v}' for k, v in config_update.items())) if config_update else 'No config changes extracted'
@@ -273,8 +342,9 @@ def config_node(state: AgentState) -> dict:
 
 def synthesize_node(state: AgentState) -> dict:
     """Build the final Claude prompt from tool_results and return response."""
-    import json
     llm = _get_llm()
+    if llm is None:
+        return {'final_response': _fallback_synthesis(state, _ANTHROPIC_DISABLED_REASON or 'no model key configured')}
 
     context_str = json.dumps(state.get('tool_results', []), indent=2, default=str)
     citations_str = '\n'.join(f"- {c}" for c in state.get('citations', []) if c)
@@ -309,11 +379,16 @@ Sources cited:
 
 Answer the user's question using the data above. Be specific and quantitative."""
 
-    resp = llm.invoke([
-        SystemMessage(content=_SYNTHESIZE_SYSTEM),
-        HumanMessage(content=user_content),
-    ])
-    return {'final_response': resp.content if isinstance(resp.content, str) else str(resp.content)}
+    try:
+        resp = llm.invoke([
+            SystemMessage(content=_SYNTHESIZE_SYSTEM),
+            HumanMessage(content=user_content),
+        ])
+        return {'final_response': resp.content if isinstance(resp.content, str) else str(resp.content)}
+    except Exception as exc:
+        if '401' in str(exc):
+            _disable_anthropic('Anthropic authentication failed')
+        return {'final_response': _fallback_synthesis(state, str(exc)[:120])}
 
 
 # ── Routing ────────────────────────────────────────────────────────────────

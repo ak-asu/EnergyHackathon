@@ -6,7 +6,7 @@ _MOCK_PRICES = {"henry_hub": 3.41, "waha_hub": 1.84}
 
 EIA_URL = (
     "https://api.eia.gov/v2/natural-gas/pri/sum/data/"
-    "?api_key={key}&frequency=daily"
+    "?api_key={key}&frequency=monthly"
     "&data[0]=value"
     "&facets[series][]=N9190AZ3"   # Henry Hub
     "&sort[0][column]=period&sort[0][direction]=desc"
@@ -19,6 +19,7 @@ async def fetch_gas_prices(api_key: str = "DEMO_KEY") -> dict:
 
     Falls back to mock data on any network or API error.
     """
+    source = "EIA"
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             url = EIA_URL.format(key=api_key)
@@ -26,8 +27,11 @@ async def fetch_gas_prices(api_key: str = "DEMO_KEY") -> dict:
             resp.raise_for_status()
             rows = resp.json().get("response", {}).get("data", [])
             henry = float(rows[0]["value"]) if rows else _MOCK_PRICES["henry_hub"]
+            if not rows:
+                source = "EIA-fallback-no-data"
     except Exception:
         henry = _MOCK_PRICES["henry_hub"]
+        source = "EIA-fallback-error"
 
     waha = round(henry - 1.57, 2)  # Waha trades at a ~$1.57 discount historically
     return {
@@ -35,5 +39,5 @@ async def fetch_gas_prices(api_key: str = "DEMO_KEY") -> dict:
         "waha_hub":  waha,
         "spread":    round(henry - waha, 2),
         "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
-        "source": "EIA",
+        "source": source,
     }

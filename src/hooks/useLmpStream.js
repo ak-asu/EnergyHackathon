@@ -6,6 +6,10 @@ export function useLmpStream() {
   const [lmp, setLmp] = useState(FALLBACK)
 
   useEffect(() => {
+    const enableWsInProd = import.meta.env.VITE_ENABLE_LMP_WS === 'true'
+    const shouldUseWs = !import.meta.env.PROD || enableWsInProd
+    if (!shouldUseWs) return
+
     let ws
     const connect = () => {
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws'

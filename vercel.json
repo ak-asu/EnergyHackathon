@@ -16,7 +16,7 @@
       ]
     },
     "backend": {
-      "entrypoint": "main.py",
+      "entrypoint": "backend/main.py",
       "routePrefix": "/_/backend",
       "framework": "fastapi",
       "excludeFiles": [

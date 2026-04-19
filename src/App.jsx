@@ -21,7 +21,7 @@ import { useEvaluate } from './hooks/useEvaluate'
 import { useCompare } from './hooks/useCompare'
 
 export default function App() {
-  const { scorecard, narrative, status, evaluate, reset } = useEvaluate()
+  const { scorecard, narrative, status, error, evaluate, reset } = useEvaluate()
   const { pins, results: compareResults, status: compareStatus, addPin, clearPins, runCompare } = useCompare()
   const [panelOpen, setPanelOpen] = useState(false)
   const [analystOpen, setAnalystOpen] = useState(false)
@@ -116,6 +116,7 @@ export default function App() {
           scorecard={scorecard}
           narrative={narrative}
           status={status}
+          error={error}
           onClose={() => { reset(); setPanelOpen(false) }}
         />
       )}

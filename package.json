@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:api": "python scripts/run_api.py",
-    "dev:api:reload": "python scripts/run_api.py --reload",
+    "dev:api": ".\\.venv\\Scripts\\python.exe scripts/run_api.py",
+    "dev:api:reload": ".\\.venv\\Scripts\\python.exe scripts/run_api.py --reload",
     "build": "vite build",
     "preview": "vite preview"
   },

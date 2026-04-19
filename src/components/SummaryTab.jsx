@@ -52,8 +52,16 @@ function RegimeProbBars({ proba }) {
   )
 }
 
-export default function SummaryTab({ scorecard: sc, narrative, status }) {
-  if (!sc) return <div className="scorecard-loading">Evaluating coordinate…</div>
+export default function SummaryTab({ scorecard: sc, narrative, status, error }) {
+  if (!sc) {
+    if (status === 'error') {
+      return <div className="scorecard-loading">Evaluation failed: {error || 'Unknown error'}</div>
+    }
+    if (status === 'done') {
+      return <div className="scorecard-loading">No scorecard returned for this coordinate.</div>
+    }
+    return <div className="scorecard-loading">Evaluating coordinate…</div>
+  }
 
   const cost = sc.cost
   return (

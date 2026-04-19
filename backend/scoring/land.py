@@ -3,8 +3,15 @@
 Baseline: rule-based weighted formula with SHAP-style per-feature attribution.
 Upgrade: loads LightGBM model from data/models/land_lgbm.pkl when available.
 """
+import logging
+import warnings
 from pathlib import Path
 from backend.features.vector import FeatureVector, DISQUALIFY_FEMA, MIN_ACRES
+
+try:
+    from sklearn.exceptions import InconsistentVersionWarning
+except Exception:  # pragma: no cover - sklearn may be absent in some test environments
+    InconsistentVersionWarning = Warning
 
 _WEIGHTS = {
     'water':      0.15,
@@ -24,6 +31,13 @@ _FEMA_SCORES = {'X': 1.0, 'X500': 0.7, 'D': 0.4, 'A': 0.0, 'AE': 0.0, 'V': 0.0}
 _OWNERSHIP_SCORES = {'private': 1.0, 'state': 0.6, 'blm_federal': 0.3}
 
 _MODEL_PATH = Path('data/models/land_lgbm.pkl')
+_LOGGER = logging.getLogger(__name__)
+_MODEL_BUNDLE = None
+_EXPLAINER = None
+_MODEL_LOAD_ATTEMPTED = False
+_LAND_LOAD_WARNED = False
+_LAND_SCORE_WARNED = False
+_LAND_SHAP_WARNED = False
 
 
 def check_hard_disqualifiers(fv: FeatureVector) -> str | None:
@@ -54,30 +68,88 @@ def _rule_based(fv: FeatureVector) -> tuple[float, dict[str, float]]:
     return score, shap
 
 
+def _load_land_assets():
+    """Load LightGBM model/scaler + optional SHAP explainer once per process."""
+    global _MODEL_BUNDLE, _EXPLAINER, _MODEL_LOAD_ATTEMPTED, _LAND_LOAD_WARNED
+    if _MODEL_LOAD_ATTEMPTED:
+        return _MODEL_BUNDLE, _EXPLAINER
+
+    _MODEL_LOAD_ATTEMPTED = True
+    if not _MODEL_PATH.exists():
+        return None, None
+
+    try:
+        import pickle
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', InconsistentVersionWarning)
+            with open(_MODEL_PATH, 'rb') as f:
+                bundle = pickle.load(f)
+        if isinstance(bundle, tuple) and len(bundle) == 2:
+            _MODEL_BUNDLE = bundle
+    except Exception as exc:
+        _MODEL_BUNDLE = None
+        if not _LAND_LOAD_WARNED:
+            _LOGGER.warning("Failed to load land model bundle from %s; using rule-based land scoring fallback (%s)", _MODEL_PATH, exc)
+            _LAND_LOAD_WARNED = True
+
+    shap_path = _MODEL_PATH.with_suffix('.shap.pkl')
+    if shap_path.exists():
+        try:
+            import pickle
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', InconsistentVersionWarning)
+                with open(shap_path, 'rb') as f:
+                    _EXPLAINER = pickle.load(f)
+        except Exception:
+            _EXPLAINER = None
+
+    return _MODEL_BUNDLE, _EXPLAINER
+
+
 def score_land(fv: FeatureVector) -> tuple[float, dict[str, float]]:
     """Return (land_score, shap_dict). Loads LightGBM model if available."""
-    if _MODEL_PATH.exists():
-        import pickle
-        import numpy as np
-        with open(_MODEL_PATH, 'rb') as f:
-            model, scaler = pickle.load(f)
-        features = np.array([[
-            fv.water_km, fv.fiber_km, fv.pipeline_km, fv.substation_km,
-            fv.highway_km, _OWNERSHIP_SCORES.get(fv.ownership_type, 0.5),
-            _FEMA_SCORES.get(fv.fema_zone, 0.4),
-            fv.seismic_hazard, fv.wildfire_risk, float(fv.epa_attainment),
-        ]])
-        X = scaler.transform(features)
-        score = float(model.predict_proba(X)[0, 1])
-        shap_path = _MODEL_PATH.with_suffix('.shap.pkl')
-        if shap_path.exists():
-            with open(shap_path, 'rb') as f:
-                explainer = pickle.load(f)
-            sv = explainer.shap_values(X)[0]
-            keys = ['water', 'fiber', 'pipeline', 'substation', 'highway',
-                    'ownership', 'fema', 'seismic', 'wildfire', 'epa']
-            shap = {k: round(float(v), 5) for k, v in zip(keys, sv)}
-        else:
+    global _LAND_SCORE_WARNED, _LAND_SHAP_WARNED
+    bundle, explainer = _load_land_assets()
+    if bundle is not None:
+        try:
+            import numpy as np
+            model, scaler = bundle
+            features = np.array([[
+                fv.water_km, fv.fiber_km, fv.pipeline_km, fv.substation_km,
+                fv.highway_km, _OWNERSHIP_SCORES.get(fv.ownership_type, 0.5),
+                _FEMA_SCORES.get(fv.fema_zone, 0.4),
+                fv.seismic_hazard, fv.wildfire_risk, float(fv.epa_attainment),
+            ]])
+            X = scaler.transform(features)
+            score = float(model.predict_proba(X)[0, 1])
+
             _, shap = _rule_based(fv)
-        return round(min(max(score, 0.0), 1.0), 4), shap
+            if explainer is not None:
+                try:
+                    keys = ['water', 'fiber', 'pipeline', 'substation', 'highway',
+                            'ownership', 'fema', 'seismic', 'wildfire', 'epa']
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            'ignore',
+                            message='LightGBM binary classifier with TreeExplainer shap values output has changed to a list of ndarray',
+                            category=UserWarning,
+                        )
+                        shap_values = explainer.shap_values(X)
+                    if isinstance(shap_values, list):
+                        idx = 1 if len(shap_values) > 1 else 0
+                        sv = shap_values[idx][0]
+                    else:
+                        sv = shap_values[0]
+                    shap = {k: round(float(v), 5) for k, v in zip(keys, sv)}
+                except Exception as exc:
+                    if not _LAND_SHAP_WARNED:
+                        _LOGGER.warning("Failed to compute land SHAP values; using rule-based attributions (%s)", exc)
+                        _LAND_SHAP_WARNED = True
+
+            return round(min(max(score, 0.0), 1.0), 4), shap
+        except Exception as exc:
+            if not _LAND_SCORE_WARNED:
+                _LOGGER.warning("Land model inference failed; using rule-based land scoring fallback (%s)", exc)
+                _LAND_SCORE_WARNED = True
+            pass
     return _rule_based(fv)

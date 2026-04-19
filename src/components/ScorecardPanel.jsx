@@ -5,7 +5,7 @@ import RiskTab from './RiskTab'
 
 const TABS = ['Summary', 'Economics', 'Risk']
 
-export default function ScorecardPanel({ scorecard, narrative, status, onClose }) {
+export default function ScorecardPanel({ scorecard, narrative, status, error, onClose }) {
   const [tab, setTab] = useState('Summary')
   if (!scorecard && status === 'idle') return null
 
@@ -36,7 +36,7 @@ export default function ScorecardPanel({ scorecard, narrative, status, onClose }
               >{t}</button>
             ))}
           </div>
-          {tab === 'Summary'   && <SummaryTab scorecard={scorecard} narrative={narrative} status={status} />}
+          {tab === 'Summary'   && <SummaryTab scorecard={scorecard} narrative={narrative} status={status} error={error} />}
           {tab === 'Economics' && <EconomicsTab scorecard={scorecard} />}
           {tab === 'Risk'      && <RiskTab scorecard={scorecard} />}
         </>

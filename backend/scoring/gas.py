@@ -1,4 +1,5 @@
 """Gas Supply Reliability scorer. Loads KDE from data/models/gas_kde.pkl when available."""
+import logging
 from pathlib import Path
 import numpy as np
 
@@ -37,10 +38,39 @@ class GPUKernelDensity:
         return log_density.cpu().numpy()
 
 _KDE_PATH = Path('data/models/gas_kde.pkl')
+_LOGGER = logging.getLogger(__name__)
+
+_KDE_MODEL = None
+_KDE_LOAD_ATTEMPTED = False
+_KDE_LOAD_WARNED = False
+_KDE_SCORE_WARNED = False
 
 _INCIDENT_WEIGHT = 0.40
 _PIPELINE_WEIGHT = 0.35
 _WAHA_WEIGHT     = 0.25
+
+
+def _load_kde_model():
+    """Load cached KDE model once. Return None when unavailable or incompatible."""
+    global _KDE_MODEL, _KDE_LOAD_ATTEMPTED, _KDE_LOAD_WARNED
+    if _KDE_LOAD_ATTEMPTED:
+        return _KDE_MODEL
+
+    _KDE_LOAD_ATTEMPTED = True
+    if not _KDE_PATH.exists():
+        return None
+
+    try:
+        import pickle
+        with open(_KDE_PATH, 'rb') as f:
+            _KDE_MODEL = pickle.load(f)
+    except Exception as exc:
+        _KDE_MODEL = None
+        if not _KDE_LOAD_WARNED:
+            _LOGGER.warning("Failed to load gas KDE model from %s; using rule-based gas scoring fallback (%s)", _KDE_PATH, exc)
+            _KDE_LOAD_WARNED = True
+
+    return _KDE_MODEL
 
 
 def score_gas(
@@ -58,14 +88,19 @@ def score_gas(
         interstate_pipeline_km: distance to nearest interstate pipeline
         waha_distance_km: distance to Waha Hub
     """
-    if _KDE_PATH.exists():
-        import pickle, numpy as np
-        with open(_KDE_PATH, 'rb') as f:
-            kde = pickle.load(f)
-        log_density = float(kde.score_samples([[lat, lon]])[0])
-        # log_density is negative; higher (less negative) = denser incidents = lower reliability
-        # Normalize: typical range is [-15, -3]; map to incident_score in [0, 1]
-        incident_score = max(0.0, min(1.0, 1.0 - (log_density + 15) / 12.0))
+    kde = _load_kde_model()
+    global _KDE_SCORE_WARNED
+    if kde is not None:
+        try:
+            log_density = float(kde.score_samples([[lat, lon]])[0])
+            # log_density is negative; higher (less negative) = denser incidents = lower reliability
+            # Normalize: typical range is [-15, -3]; map to incident_score in [0, 1]
+            incident_score = max(0.0, min(1.0, 1.0 - (log_density + 15) / 12.0))
+        except Exception as exc:
+            incident_score = max(0.0, 1.0 - min(incident_density * 200, 1.0))
+            if not _KDE_SCORE_WARNED:
+                _LOGGER.warning("Failed to score with gas KDE model; falling back to incident_density heuristic (%s)", exc)
+                _KDE_SCORE_WARNED = True
     else:
         incident_score = max(0.0, 1.0 - min(incident_density * 200, 1.0))
 

@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { useForecast, NODES } from '../hooks/useForecast'
 
-function mockForecast(spread_p50) {
-  return Array.from({ length: 72 }, (_, i) => ({
+function buildChartData(forecast, gasAdj, lmpMult) {
+  const { p10, p50, p90, btm_cost_mwh } = forecast
+  return Array.from({ length: p50.length }, (_, i) => ({
     h: i,
-    p50: +(spread_p50 + Math.sin(i / 6) * 4).toFixed(2),
-    p10: +(spread_p50 - 8 + Math.sin(i / 6) * 4).toFixed(2),
-    p90: +(spread_p50 + 8 + Math.sin(i / 6) * 4).toFixed(2),
+    p50: +((p50[i] * lmpMult - btm_cost_mwh - gasAdj * 8.5)).toFixed(2),
+    p10: +((p10[i] * lmpMult - btm_cost_mwh - gasAdj * 8.5)).toFixed(2),
+    p90: +((p90[i] * lmpMult - btm_cost_mwh - gasAdj * 8.5)).toFixed(2),
   }))
 }
 
@@ -14,15 +16,32 @@ export default function EconomicsTab({ scorecard: sc }) {
   const [gasAdj, setGasAdj] = useState(0)
   const [lmpMult, setLmpMult] = useState(1.0)
 
+  const defaultNode = sc?.ercot_node || 'HB_WEST'
+  const { forecast, node, setNode, loading } = useForecast(defaultNode)
+
+  useEffect(() => {
+    if (sc?.ercot_node) setNode(sc.ercot_node)
+  }, [sc?.ercot_node, setNode])
+
   if (!sc) return null
 
-  const adjSpread = sc.spread_p50_mwh - gasAdj * 8.5
-  const data = mockForecast(adjSpread * lmpMult)
+  const data = buildChartData(forecast, gasAdj, lmpMult)
   const cost = sc.cost
 
   return (
     <div className="economics-tab">
-      <h4 className="econ-title">72-Hour BTM Spread Forecast</h4>
+      <div className="econ-header">
+        <h4 className="econ-title">72-Hour BTM Spread Forecast</h4>
+        <select
+          className="node-selector"
+          value={node}
+          onChange={e => setNode(e.target.value)}
+        >
+          {NODES.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        {loading && <span className="econ-loading">…</span>}
+      </div>
+
       <ResponsiveContainer width="100%" height={180}>
         <AreaChart data={data}>
           <XAxis dataKey="h" label={{ value: 'Hours', position: 'insideBottom', offset: -5 }} />

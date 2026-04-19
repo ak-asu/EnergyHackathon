@@ -1,8 +1,4 @@
-"""Gas Supply Reliability scorer.
-
-Inputs come from FeatureVector (no full object needed — just the 3 key fields).
-Loads KDE model from data/models/gas_kde.pkl when available.
-"""
+"""Gas Supply Reliability scorer. Loads KDE from data/models/gas_kde.pkl when available."""
 from pathlib import Path
 
 _KDE_PATH = Path('data/models/gas_kde.pkl')
@@ -13,6 +9,8 @@ _WAHA_WEIGHT     = 0.25
 
 
 def score_gas(
+    lat: float,
+    lon: float,
     incident_density: float,
     interstate_pipeline_km: float,
     waha_distance_km: float,
@@ -20,17 +18,19 @@ def score_gas(
     """Return gas reliability score 0–1.
 
     Args:
-        incident_density: PHMSA KDE density at coordinate (incidents/km²)
+        lat, lon: coordinate (used for KDE lookup when model is loaded)
+        incident_density: PHMSA fallback density when KDE not available
         interstate_pipeline_km: distance to nearest interstate pipeline
-        waha_distance_km: distance to Waha Hub (supply security proxy)
+        waha_distance_km: distance to Waha Hub
     """
     if _KDE_PATH.exists():
-        import pickle
+        import pickle, numpy as np
         with open(_KDE_PATH, 'rb') as f:
             kde = pickle.load(f)
-        import numpy as np
-        density = float(kde.score_samples([[0.0, 0.0]])[0])  # placeholder: use lat/lon
-        incident_score = max(0.0, 1.0 - min(density * 50, 1.0))
+        log_density = float(kde.score_samples([[lat, lon]])[0])
+        # log_density is negative; higher (less negative) = denser incidents = lower reliability
+        # Normalize: typical range is [-15, -3]; map to incident_score in [0, 1]
+        incident_score = max(0.0, min(1.0, 1.0 - (log_density + 15) / 12.0))
     else:
         incident_score = max(0.0, 1.0 - min(incident_density * 200, 1.0))
 

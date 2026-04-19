@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
 import StatsBar from './components/StatsBar'
@@ -15,11 +15,17 @@ import CTA from './components/CTA'
 import Footer from './components/Footer'
 import ScorecardPanel from './components/ScorecardPanel'
 import BottomStrip from './components/BottomStrip'
+import AIAnalystPanel from './components/AIAnalystPanel'
+import CompareMode from './components/CompareMode'
 import { useEvaluate } from './hooks/useEvaluate'
+import { useCompare } from './hooks/useCompare'
 
 export default function App() {
   const { scorecard, narrative, status, evaluate, reset } = useEvaluate()
+  const { pins, results: compareResults, status: compareStatus, addPin, clearPins, runCompare } = useCompare()
   const [panelOpen, setPanelOpen] = useState(false)
+  const [analystOpen, setAnalystOpen] = useState(false)
+  const [compareOpen, setCompareOpen] = useState(false)
 
   useEffect(() => {
     const handler = e => { evaluate(e.detail.lat, e.detail.lon); setPanelOpen(true) }
@@ -28,7 +34,10 @@ export default function App() {
   }, [evaluate])
 
   useEffect(() => {
-    // Single reveal observer for all .reveal elements
+    if (compareStatus === 'done' && compareResults.length > 0) setCompareOpen(true)
+  }, [compareStatus, compareResults])
+
+  useEffect(() => {
     const revealObserver = new IntersectionObserver((entries) => {
       entries.forEach(e => {
         if (!e.isIntersecting) return
@@ -38,7 +47,6 @@ export default function App() {
       })
     }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' })
 
-    // Single score-card observer (one observer watching all cards, not N observers)
     const scoreCardObserver = new IntersectionObserver((entries) => {
       entries.forEach(e => {
         if (!e.isIntersecting) return
@@ -65,13 +73,34 @@ export default function App() {
     }
   }, [])
 
+  const analystContext = {
+    scorecard: scorecard || null,
+    pins,
+  }
+
   return (
     <>
-      <Navbar />
+      <Navbar
+        onAnalystToggle={() => setAnalystOpen(o => !o)}
+        analystOpen={analystOpen}
+      />
       <Hero />
       <StatsBar />
       <Dashboard />
-      <SiteMap />
+      <SiteMap
+        comparePins={pins}
+        onCompareAdd={addPin}
+        onCompareClear={clearPins}
+        onCompareRun={runCompare}
+        compareStatus={compareStatus}
+      />
+      {compareOpen && (
+        <CompareMode
+          results={compareResults}
+          status={compareStatus}
+          onClose={() => { setCompareOpen(false); clearPins() }}
+        />
+      )}
       <BottomStrip />
       <LiveTicker />
       <Scoring />
@@ -90,6 +119,11 @@ export default function App() {
           onClose={() => { reset(); setPanelOpen(false) }}
         />
       )}
+      <AIAnalystPanel
+        open={analystOpen}
+        onClose={() => setAnalystOpen(false)}
+        context={analystContext}
+      />
     </>
   )
 }

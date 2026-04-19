@@ -298,7 +298,135 @@ async def api_optimize(req: OptimizeRequest):
 @app.get("/api/regime")
 async def api_regime():
     r = get_cached_regime()
-    return {"label": r.label, "proba": r.proba}
+    return {"label": r.label, "proba": r.proba, "labels": r.labels}
+
+
+# ── /api/forecast ──────────────────────────────────────────────────────────
+
+class ForecastResponse(BaseModel):
+    node: str
+    horizon: int
+    p10: list[float]
+    p50: list[float]
+    p90: list[float]
+    btm_cost_mwh: float
+    method: str
+
+
+@app.get("/api/forecast", response_model=ForecastResponse)
+async def api_forecast(node: str = "HB_WEST", horizon: int = 72):
+    """Return Moirai P10/P50/P90 LMP forecast for a node (served from cache)."""
+    from backend.scoring.power import get_forecast, HEAT_RATE, OM_COST
+    fc = get_forecast(node)
+    waha_price = 1.84
+    btm_cost = waha_price * HEAT_RATE + OM_COST
+    if fc is not None:
+        h = min(horizon, len(fc['p50']))
+        return ForecastResponse(
+            node=node, horizon=h,
+            p10=fc['p10'][:h].tolist() if hasattr(fc['p10'], 'tolist') else list(fc['p10'][:h]),
+            p50=fc['p50'][:h].tolist() if hasattr(fc['p50'], 'tolist') else list(fc['p50'][:h]),
+            p90=fc['p90'][:h].tolist() if hasattr(fc['p90'], 'tolist') else list(fc['p90'][:h]),
+            btm_cost_mwh=round(btm_cost, 2),
+            method=fc.get('method', 'cache'),
+        )
+    base = 42.0
+    flat_p50 = [base] * horizon
+    return ForecastResponse(
+        node=node, horizon=horizon,
+        p10=[base - 8] * horizon, p50=flat_p50, p90=[base + 8] * horizon,
+        btm_cost_mwh=round(btm_cost, 2), method='fallback',
+    )
+
+
+# ── /api/heatmap ────────────────────────────────────────────────────────────
+
+VALID_LAYERS = {'composite', 'gas', 'lmp'}
+
+
+@app.get("/api/heatmap")
+async def api_heatmap(layer: str = "composite", bounds: str = "", zoom: int = 8):
+    """Return GeoJSON FeatureCollection of scored points for a map heat layer."""
+    if layer not in VALID_LAYERS:
+        return {"type": "FeatureCollection", "features": []}
+
+    gas_data, lmp_data = await _fetch_market_inputs(settings.eia_api_key)
+    waha     = gas_data.get("waha_hub")
+    palo_lmp = lmp_data.get("PALOVRDE_ASR-APND", {}).get("lmp_mwh")
+    scored   = score_all(live_gas_price=waha, live_lmp=palo_lmp)
+
+    score_key = {
+        'composite': lambda s: s.composite,
+        'gas':       lambda s: s.sub_b,
+        'lmp':       lambda s: min(max(s.sub_c, 0.0), 1.0),
+    }[layer]
+
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [s.site.lng, s.site.lat]},
+            "properties": {
+                "score": round(score_key(s), 4),
+                "layer": layer,
+                "name": s.site.name,
+            },
+        }
+        for s in scored
+    ]
+    return {"type": "FeatureCollection", "features": features}
+
+
+# ── /api/compare ────────────────────────────────────────────────────────────
+
+@app.get("/api/compare")
+async def api_compare(coords: str):
+    """Evaluate N coordinates and return ranked scorecards.
+
+    coords: semicolon-separated 'lat,lon' pairs, e.g. '31.9,-102.1;32.5,-101.2'
+    """
+    pairs = []
+    for part in coords.split(';'):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            lat_s, lon_s = part.split(',')
+            pairs.append((float(lat_s.strip()), float(lon_s.strip())))
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"Invalid coord pair: '{part}'")
+
+    if not pairs:
+        raise HTTPException(status_code=422, detail="No valid coordinate pairs provided")
+    if len(pairs) > 5:
+        raise HTTPException(status_code=422, detail="Maximum 5 coordinates per compare request")
+
+    results = []
+    for lat, lon in pairs:
+        sc = evaluate_coordinate(lat, lon)
+        results.append({
+            "lat": sc.lat, "lon": sc.lon,
+            "composite_score": sc.composite_score,
+            "land_score": sc.land_score,
+            "gas_score": sc.gas_score,
+            "power_score": sc.power_score,
+            "regime": sc.regime,
+            "spread_p50_mwh": sc.spread_p50_mwh,
+            "spread_durability": sc.spread_durability,
+            "disqualified": sc.hard_disqualified,
+            "disqualify_reason": sc.disqualify_reason,
+            "cost": {
+                "npv_p10_m": sc.cost.npv_p10_m if sc.cost else 0,
+                "npv_p50_m": sc.cost.npv_p50_m if sc.cost else 0,
+                "npv_p90_m": sc.cost.npv_p90_m if sc.cost else 0,
+                "btm_capex_m": sc.cost.btm_capex_m if sc.cost else 0,
+                "land_acquisition_m": sc.cost.land_acquisition_m if sc.cost else 0,
+                "pipeline_connection_m": sc.cost.pipeline_connection_m if sc.cost else 0,
+                "water_connection_m": sc.cost.water_connection_m if sc.cost else 0,
+            } if sc.cost else None,
+        })
+
+    results.sort(key=lambda x: x['composite_score'], reverse=True)
+    return results
 
 
 @app.get("/api/news")
@@ -307,23 +435,39 @@ async def api_news():
 
 
 class AgentRequest(BaseModel):
-    message: str
-    history: list = []
+    query: str
+    context: dict = {}   # {scorecard?, bounds?, regime?} from frontend
 
 
 @app.post("/api/agent")
 async def api_agent(req: AgentRequest):
     async def generate():
         from backend.agent.graph import get_agent
-        from langchain_core.messages import HumanMessage
         agent = get_agent()
-        state = {'messages': [HumanMessage(content=req.message)]}
-        async for event in agent.astream(state):
-            for node, data in event.items():
-                for msg in data.get('messages', []):
-                    if hasattr(msg, 'content') and isinstance(msg.content, str):
-                        yield {"event": "token", "data": msg.content}
-        yield {"event": "done", "data": "{}"}
+        initial_state = {
+            'query': req.query,
+            'context': req.context,
+            'intent': '',
+            'needs_web_search': False,
+            'tool_results': [],
+            'citations': [],
+            'final_response': '',
+        }
+        try:
+            async for event in agent.astream(initial_state):
+                for node_name, node_output in event.items():
+                    if node_name == 'synthesize' and node_output.get('final_response'):
+                        response_text = node_output['final_response']
+                        chunk_size = 4
+                        for i in range(0, len(response_text), chunk_size):
+                            yield {"event": "token", "data": response_text[i:i+chunk_size]}
+                    elif node_name in ('stress_test', 'compare', 'timing', 'explanation'):
+                        for citation in node_output.get('citations', []):
+                            if citation:
+                                yield {"event": "citation", "data": citation}
+            yield {"event": "done", "data": "{}"}
+        except Exception as e:
+            yield {"event": "error", "data": str(e)[:200]}
     return EventSourceResponse(generate())
 
 

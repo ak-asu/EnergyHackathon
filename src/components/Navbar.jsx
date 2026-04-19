@@ -1,4 +1,4 @@
-export default function Navbar() {
+export default function Navbar({ onAnalystToggle, analystOpen }) {
   return (
     <nav>
       <a href="#" className="nav-logo">
@@ -14,7 +14,16 @@ export default function Navbar() {
         <li><a href="#markets">Markets</a></li>
         <li><a href="#quality">Quality</a></li>
       </ul>
-      <a href="#cta" className="nav-cta">Request Access</a>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button
+          className={`analyst-toggle-btn${analystOpen ? ' analyst-toggle-btn--active' : ''}`}
+          onClick={onAnalystToggle}
+          title="AI Analyst"
+        >
+          ⚡ AI Analyst
+        </button>
+        <a href="#cta" className="nav-cta">Request Access</a>
+      </div>
     </nav>
   )
 }

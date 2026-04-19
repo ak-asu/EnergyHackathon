@@ -29,6 +29,29 @@ function Gauge({ value }) {
   )
 }
 
+function RegimeProbBars({ proba }) {
+  if (!proba || proba.length < 3) return null
+  const items = [
+    { label: 'Normal',          value: proba[0], color: '#22C55E' },
+    { label: 'Stress/Scarcity', value: proba[1], color: '#EF4444' },
+    { label: 'Wind Curtailment', value: proba[2], color: '#F59E0B' },
+  ]
+  return (
+    <div className="regime-prob-section">
+      <div className="regime-prob-title">Regime Confidence</div>
+      {items.map(({ label, value, color }) => (
+        <div key={label} className="regime-prob-row">
+          <span className="regime-prob-label">{label}</span>
+          <div className="regime-prob-track">
+            <div className="regime-prob-fill" style={{ width: `${value * 100}%`, background: color }} />
+          </div>
+          <span className="regime-prob-pct">{Math.round(value * 100)}%</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function SummaryTab({ scorecard: sc, narrative, status }) {
   if (!sc) return <div className="scorecard-loading">Evaluating coordinate…</div>
 
@@ -48,6 +71,8 @@ export default function SummaryTab({ scorecard: sc, narrative, status }) {
         {sc.regime === 'wind_curtailment' && '🟡 Wind Curtailment'}
         {sc.regime === 'normal'           && '🟢 Normal'}
       </div>
+
+      <RegimeProbBars proba={sc.regime_proba} />
 
       {cost && (
         <div className="npv-row">

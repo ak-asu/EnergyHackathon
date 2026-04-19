@@ -42,6 +42,8 @@ def evaluate_coordinate(
     land_score, land_shap = score_land(fv)
 
     gas_score = score_gas(
+        lat=fv.lat,
+        lon=fv.lon,
         incident_density=fv.phmsa_incident_density,
         interstate_pipeline_km=fv.interstate_pipeline_km,
         waha_distance_km=fv.waha_distance_km,

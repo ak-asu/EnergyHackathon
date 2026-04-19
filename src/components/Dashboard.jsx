@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine,
@@ -64,6 +65,46 @@ function scoreColor(v) {
   return '#0D9488'
 }
 
+// ─── Pipeline Trigger ──────────────────────────────────────────────────────
+
+function PipelineTrigger() {
+  const [status, setStatus] = useState('idle')  // idle | running | done | error
+  const [lastRun, setLastRun] = useState(null)
+
+  const trigger = useCallback(() => {
+    setStatus('running')
+    fetch('/api/pipeline/run', { method: 'POST' })
+      .then(r => r.json())
+      .then(() => {
+        setStatus('done')
+        setLastRun(new Date().toLocaleTimeString())
+        setTimeout(() => setStatus('idle'), 3000)
+      })
+      .catch(() => {
+        setStatus('error')
+        setTimeout(() => setStatus('idle'), 4000)
+      })
+  }, [])
+
+  return (
+    <div className="pipeline-trigger">
+      <button
+        className={`pipeline-btn pipeline-btn--${status}`}
+        onClick={trigger}
+        disabled={status === 'running'}
+      >
+        {status === 'running' ? '⟳ Refreshing…' : '↺ Refresh Data'}
+      </button>
+      {lastRun && status !== 'error' && (
+        <span className="pipeline-last-run">Updated {lastRun}</span>
+      )}
+      {status === 'error' && (
+        <span className="pipeline-error">Pipeline failed — using cached data</span>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -88,6 +129,8 @@ export default function Dashboard() {
   return (
     <section id="dashboard">
       <div className="section-inner">
+
+        <PipelineTrigger />
 
         {/* Header */}
         <div className="section-header">

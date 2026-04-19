@@ -10,6 +10,7 @@ import {
 import L from 'leaflet'
 import { useSites } from '../hooks/useApi'
 import { useOptimize } from '../hooks/useOptimize'
+import { useHeatmap } from '../hooks/useHeatmap'
 
 function scoreToColor(v) {
   if (v >= 0.82) return '#3A8A65'
@@ -116,7 +117,7 @@ function AreaSelectInteraction({ active, onRubberChange, onCommit }) {
 function MapClickHandler({ onMapClick }) {
   const map = useMap()
   useEffect(() => {
-    const handler = e => onMapClick(e.latlng.lat, e.latlng.lng)
+    const handler = e => onMapClick(e.latlng.lat, e.latlng.lng, e.originalEvent.shiftKey)
     map.on('click', handler)
     return () => map.off('click', handler)
   }, [map, onMapClick])
@@ -128,16 +129,21 @@ function sitesInBounds(sites, bounds) {
   return sites.filter(s => bounds.contains(L.latLng(s.lat, s.lng)))
 }
 
-export default function SiteMap() {
+export default function SiteMap({ comparePins = [], onCompareAdd, onCompareClear, onCompareRun, compareStatus }) {
   const { sites, dataSource, refetchSites } = useSites()
   const [selectMode, setSelectMode] = useState(false)
   const [rubberBounds, setRubberBounds] = useState(null)
   const [committedBounds, setCommittedBounds] = useState(null)
   const { optimize, optimal, status: optStatus, progress, reset: resetOpt } = useOptimize()
+  const { features, activeLayer, loading: heatLoading, loadLayer } = useHeatmap()
 
-  const handleMapClick = useCallback((lat, lon) => {
-    window.dispatchEvent(new CustomEvent('collide:evaluate', { detail: { lat, lon } }))
-  }, [])
+  const handleMapClick = useCallback((lat, lon, isShift) => {
+    if (isShift && onCompareAdd) {
+      onCompareAdd(lat, lon)
+    } else {
+      window.dispatchEvent(new CustomEvent('collide:evaluate', { detail: { lat, lon } }))
+    }
+  }, [onCompareAdd])
 
   const onRubberChange = useCallback(b => {
     setRubberBounds(b)
@@ -359,7 +365,68 @@ export default function SiteMap() {
             </Popup>
           </CircleMarker>
         ))}
+
+        {/* Layer toggle pills — top right */}
+        <div className="map-layer-toggles" style={{
+          position: 'absolute', top: 10, right: 10, zIndex: 1000,
+          display: 'flex', flexDirection: 'column', gap: 4,
+        }}>
+          {['composite', 'gas', 'lmp'].map(layer => (
+            <button
+              key={layer}
+              className={`layer-toggle-pill${activeLayer === layer ? ' layer-toggle-pill--active' : ''}`}
+              onClick={() => loadLayer(layer)}
+            >
+              {heatLoading && activeLayer === layer ? '…' : layer}
+            </button>
+          ))}
+        </div>
+
+        {/* Heatmap overlay points */}
+        {features.map((feat, i) => (
+          <CircleMarker
+            key={`heat-${i}`}
+            center={[feat.geometry.coordinates[1], feat.geometry.coordinates[0]]}
+            radius={16}
+            pathOptions={{
+              fillColor: feat.properties.score >= 0.75 ? '#22C55E'
+                       : feat.properties.score >= 0.5 ? '#F59E0B' : '#EF4444',
+              fillOpacity: 0.35, stroke: false,
+            }}
+          />
+        ))}
+
+        {/* Compare pins (shift-click) */}
+        {comparePins.map((pin, i) => (
+          <CircleMarker
+            key={`pin-${i}`}
+            center={[pin.lat, pin.lon]}
+            radius={10}
+            pathOptions={{ color: '#A78BFA', fillColor: '#A78BFA', fillOpacity: 0.7 }}
+          >
+            <Popup>
+              <div style={{ fontSize: 12, fontFamily: 'monospace' }}>
+                Pin {i + 1}: ({pin.lat.toFixed(3)}, {pin.lon.toFixed(3)})
+              </div>
+            </Popup>
+          </CircleMarker>
+        ))}
       </MapContainer>
+
+      {/* Compare trigger bar */}
+      {comparePins.length >= 2 && (
+        <div className="compare-header-bar">
+          <span>{comparePins.length} sites selected</span>
+          <button
+            className="compare-run-btn"
+            onClick={onCompareRun}
+            disabled={compareStatus === 'loading'}
+          >
+            {compareStatus === 'loading' ? 'Comparing…' : 'Compare Sites →'}
+          </button>
+          <button className="compare-clear-btn" onClick={onCompareClear}>Clear</button>
+        </div>
+      )}
 
       {committedBounds && (
         <div className="sitemap-pricing-panel">

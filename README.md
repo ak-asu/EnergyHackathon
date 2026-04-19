@@ -171,12 +171,12 @@ Full schema reference: [`/docs/schema`](/docs/schema)
 
 Live docs are available at `/docs` in the app:
 
-- [Overview](/docs/overview) — what COLLIDE does and quick start
-- [Architecture](/docs/architecture) — system layers, agent graph, data pipeline
-- [How It Works](/docs/howitworks) — ML models, weights, scoring pipeline
-- [Features](/docs/features) — full feature guide
-- [Data](/docs/data) — data sources and pipeline details
-- [Schema](/docs/schema) — API contracts, SSE events, data models
+- [Overview](/src/pages/docs/overview.md) — what COLLIDE does and quick start
+- [Architecture](/src/pages/docs/architecture.md) — system layers, agent graph, data pipeline
+- [How It Works](/src/pages/docs/howitworks.md) — ML models, weights, scoring pipeline
+- [Features](/src/pages/docs/features.md) — full feature guide
+- [Data](/src/pages/docs/data.md) — data sources and pipeline details
+- [Schema](/src/pages/docs/schema.md) — API contracts, SSE events, data models
 
 ---
 

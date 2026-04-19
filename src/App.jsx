@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
 import StatsBar from './components/StatsBar'
@@ -15,13 +15,33 @@ import AIAnalystPanel from './components/AIAnalystPanel'
 import CompareMode from './components/CompareMode'
 import { useEvaluate } from './hooks/useEvaluate'
 import { useCompare } from './hooks/useCompare'
+import { useOptimize } from './hooks/useOptimize'
+import { useOptimizeConfig } from './hooks/useOptimizeConfig'
+import { useMapContext } from './hooks/useMapContext'
+import { useAgent } from './hooks/useAgent'
 
 export default function App() {
-  const { scorecard, narrative, status, error, evaluate, reset } = useEvaluate()
-  const { pins, results: compareResults, status: compareStatus, addPin, clearPins, runCompare } = useCompare()
+  const { scorecard, narrative, status: evalStatus, error, evaluate, reset: resetEval } = useEvaluate()
+  const { pins, results: compareResults, status: compareStatus, addPin, removePin, clearPins, runCompare } = useCompare()
+  const { progress, optimal, status: optStatus, optimize, reset: resetOpt } = useOptimize()
+  const { config, updateConfig, resetConfig } = useOptimizeConfig()
+  const { chips, addChip, removeChip } = useMapContext()
+  const { tokens, citations, status: agentStatus, ask, reset: resetAgent } = useAgent()
+
   const [panelOpen, setPanelOpen] = useState(false)
   const [analystOpen, setAnalystOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
+
+  const globalBusy = optStatus === 'running'
+    || compareStatus === 'loading'
+    || evalStatus === 'loading'
+    || agentStatus === 'loading'
+    || agentStatus === 'streaming'
+
+  const mapBusyLabel = optStatus === 'running' ? 'Optimizing…'
+    : compareStatus === 'loading' ? 'Comparing…'
+    : evalStatus === 'loading' ? 'Evaluating…'
+    : ''
 
   useEffect(() => {
     const handler = e => { evaluate(e.detail.lat, e.detail.lon); setPanelOpen(true) }
@@ -56,12 +76,9 @@ export default function App() {
 
     const nav = document.querySelector('nav')
     const handleScroll = () => {
-      nav.style.background = window.scrollY > 40
-        ? 'rgba(12,11,9,0.97)'
-        : 'rgba(12,11,9,0.85)'
+      nav.style.background = window.scrollY > 40 ? 'rgba(12,11,9,0.97)' : 'rgba(12,11,9,0.85)'
     }
     window.addEventListener('scroll', handleScroll)
-
     return () => {
       revealObserver.disconnect()
       scoreCardObserver.disconnect()
@@ -69,26 +86,30 @@ export default function App() {
     }
   }, [])
 
-  const analystContext = {
-    scorecard: scorecard || null,
-    pins,
-  }
+  const analystContext = { scorecard: scorecard || null, pins, chips }
 
   return (
     <>
-      <Navbar
-        onAnalystToggle={() => setAnalystOpen(o => !o)}
-        analystOpen={analystOpen}
-      />
+      <Navbar onAnalystToggle={() => setAnalystOpen(o => !o)} analystOpen={analystOpen} />
       <Hero />
       <StatsBar />
       <Dashboard />
       <SiteMap
         comparePins={pins}
         onCompareAdd={addPin}
+        onCompareRemove={removePin}
         onCompareClear={clearPins}
         onCompareRun={runCompare}
         compareStatus={compareStatus}
+        optimize={optimize}
+        optimal={optimal}
+        optStatus={optStatus}
+        config={config}
+        updateConfig={updateConfig}
+        resetConfig={resetConfig}
+        onAddContextChip={(chip) => { addChip(chip); setAnalystOpen(true) }}
+        globalBusy={globalBusy}
+        mapBusyLabel={mapBusyLabel}
       />
       {compareOpen && (
         <CompareMode
@@ -107,15 +128,22 @@ export default function App() {
         <ScorecardPanel
           scorecard={scorecard}
           narrative={narrative}
-          status={status}
+          status={evalStatus}
           error={error}
-          onClose={() => { reset(); setPanelOpen(false) }}
+          onClose={() => { resetEval(); setPanelOpen(false) }}
         />
       )}
       <AIAnalystPanel
         open={analystOpen}
         onClose={() => setAnalystOpen(false)}
         context={analystContext}
+        chips={chips}
+        onRemoveChip={removeChip}
+        ask={ask}
+        reset={resetAgent}
+        tokens={tokens}
+        citations={citations}
+        agentStatus={agentStatus}
       />
     </>
   )

@@ -123,9 +123,15 @@ class EvaluateRequest(BaseModel):
 
 
 class OptimizeRequest(BaseModel):
-    bounds: dict        # {sw: {lat, lon}, ne: {lat, lon}}
+    bounds: dict
     weights: tuple[float, float, float] = (0.30, 0.35, 0.35)
-    grid_steps: int = 8  # NxN grid = grid_steps² candidates
+    grid_steps: int = 8
+    max_sites: int = 3
+    gas_price_max: float | None = None
+    power_cost_max: float | None = None
+    acres_min: int = 0
+    market_filter: list[str] = []
+    min_composite: float = 0.0
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -243,7 +249,7 @@ async def api_evaluate(req: EvaluateRequest):
 
         if not sc.hard_disqualified:
             async for chunk in stream_narration(sc, settings.anthropic_api_key):
-                yield {"event": "narrative", "data": chunk}
+                yield {"event": "narrative", "data": json.dumps(chunk)}
 
         yield {"event": "done", "data": "{}"}
 
@@ -260,7 +266,7 @@ async def api_optimize(req: OptimizeRequest):
         lat_grid = [sw["lat"] + (ne["lat"] - sw["lat"]) * i / (steps - 1) for i in range(steps)]
         lon_grid = [sw["lon"] + (ne["lon"] - sw["lon"]) * j / (steps - 1) for j in range(steps)]
 
-        best_sc = None
+        candidates = []
         total = steps * steps
         count = 0
 
@@ -276,20 +282,26 @@ async def api_optimize(req: OptimizeRequest):
                         "pct": round(count / total * 100),
                     }),
                 }
-                if not sc.hard_disqualified:
-                    if best_sc is None or sc.composite_score > best_sc.composite_score:
-                        best_sc = sc
-                await asyncio.sleep(0)  # yield control
+                if sc.hard_disqualified:
+                    await asyncio.sleep(0)
+                    continue
+                if sc.composite_score < req.min_composite:
+                    await asyncio.sleep(0)
+                    continue
+                candidates.append(sc)
+                await asyncio.sleep(0)
 
-        if best_sc:
+        candidates.sort(key=lambda s: s.composite_score, reverse=True)
+        for sc in candidates[:req.max_sites]:
             payload = {
-                "lat": best_sc.lat, "lon": best_sc.lon,
-                "composite_score": best_sc.composite_score,
-                "land_score": best_sc.land_score,
-                "gas_score": best_sc.gas_score,
-                "power_score": best_sc.power_score,
+                "lat": sc.lat, "lon": sc.lon,
+                "composite_score": sc.composite_score,
+                "land_score": sc.land_score,
+                "gas_score": sc.gas_score,
+                "power_score": sc.power_score,
             }
             yield {"event": "optimal", "data": json.dumps(payload)}
+
         yield {"event": "done", "data": "{}"}
 
     return EventSourceResponse(generate())
@@ -460,7 +472,14 @@ async def api_agent(req: AgentRequest):
                         response_text = node_output['final_response']
                         chunk_size = 4
                         for i in range(0, len(response_text), chunk_size):
-                            yield {"event": "token", "data": response_text[i:i+chunk_size]}
+                            yield {"event": "token", "data": json.dumps(response_text[i:i+chunk_size])}
+                    elif node_name == 'config':
+                        for result in node_output.get('tool_results', []):
+                            if result.get('config_update'):
+                                yield {"event": "config_update", "data": json.dumps(result['config_update'])}
+                        for citation in node_output.get('citations', []):
+                            if citation:
+                                yield {"event": "citation", "data": citation}
                     elif node_name in ('stress_test', 'compare', 'timing', 'explanation'):
                         for citation in node_output.get('citations', []):
                             if citation:

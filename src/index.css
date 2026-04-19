@@ -1022,6 +1022,7 @@ footer {
 .ai-panel-title { font-size: 13px; font-weight: 600; color: #F5F0E8; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em; }
 .ai-panel-close { background: transparent; border: none; color: #9E9589; font-size: 14px; cursor: pointer; padding: 2px 6px; }
 .ai-panel-close:hover { color: #EF4444; }
+.ai-panel-chips { padding-bottom: 6px; border-bottom: 1px solid #1a1814; flex-shrink: 0; }
 .ai-panel-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
 .ai-panel-divider { height: 1px; background: #1a1814; margin: 0; flex-shrink: 0; }
 
@@ -1091,3 +1092,108 @@ footer {
 .bs-fuel-mix b { color: #F5F0E8; }
 
 .md-content > :last-child { margin-bottom: 0; }
+
+/* ── Map context menu ─────────────────────────────── */
+.map-context-menu {
+  background: #1A1612;
+  border: 1px solid #2A2318;
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  font-family: 'IBM Plex Mono', monospace;
+}
+.map-ctx-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  color: #C4B8A4;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.map-ctx-item:hover {
+  background: #2A2318;
+  color: #F4EFE4;
+}
+
+/* ── Map status indicator ─────────────────────────── */
+.map-status-indicator {
+  position: absolute;
+  bottom: 28px;
+  left: 10px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(26,22,18,0.92);
+  border: 1px solid #2A2318;
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: #22C55E;
+  pointer-events: none;
+}
+
+/* ── Config dialog ────────────────────────────────── */
+.config-dialog-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+}
+.config-dialog {
+  background: #1A1612; border: 1px solid #2A2318; border-radius: 10px;
+  width: 380px; max-height: 80vh; overflow-y: auto;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.config-dialog-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 20px 12px; border-bottom: 1px solid #2A2318;
+}
+.config-dialog-title { color: #F4EFE4; font-size: 13px; font-weight: 600; }
+.config-dialog-close { background: none; border: none; color: #7A6E5E; cursor: pointer; font-size: 14px; }
+.config-dialog-close:hover { color: #F4EFE4; }
+.config-dialog-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.config-label { color: #A09688; font-size: 11px; display: flex; flex-direction: column; gap: 6px; }
+.config-input {
+  background: #0C0B09; border: 1px solid #2A2318; border-radius: 4px;
+  color: #F4EFE4; font-family: inherit; font-size: 12px; padding: 6px 8px;
+}
+.config-slider { accent-color: #22C55E; cursor: pointer; }
+.config-market-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.config-market-check { display: flex; align-items: center; gap: 4px; color: #C4B8A4; cursor: pointer; }
+.config-weight-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.config-weight-label { min-width: 88px; color: #C4B8A4; }
+.config-dialog-footer {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 20px 16px; border-top: 1px solid #2A2318;
+}
+.config-btn { padding: 7px 16px; border-radius: 5px; border: none; font-family: inherit; font-size: 12px; cursor: pointer; }
+.config-btn--ghost { background: transparent; border: 1px solid #2A2318; color: #A09688; }
+.config-btn--ghost:hover { border-color: #7A6E5E; color: #F4EFE4; }
+.config-btn--primary { background: #22C55E; color: #0C0B09; font-weight: 600; }
+.config-btn--primary:hover { background: #16A34A; }
+
+/* ── Context chip bar ─────────────────────────────── */
+.context-chip-bar {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 6px 12px 0;
+}
+.chip-dismiss {
+  background: none; border: none; color: inherit;
+  cursor: pointer; margin-left: 4px; padding: 0;
+  font-size: 12px; opacity: 0.7; line-height: 1;
+}
+.chip-dismiss:hover { opacity: 1; }
+
+.chat-quick-prompts { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 12px 0; }
+.chat-quick-chip { background: rgba(255,255,255,0.05); border: 1px solid #2a2520; border-radius: 12px; color: #C8C0B4; font-size: 11px; padding: 3px 10px; cursor: pointer; transition: background 0.15s; font-family: inherit; }
+.chat-quick-chip:hover:not(:disabled) { background: rgba(255,255,255,0.10); border-color: #4AA88A; color: #E8DFD0; }
+.chat-quick-chip:disabled { opacity: 0.4; cursor: not-allowed; }
+.chat-quick-chip--ghost { background: transparent; border-color: #2a2520; color: #7A6E5E; }
+.chat-quick-chip--ghost:hover:not(:disabled) { background: rgba(239,68,68,0.08); border-color: #EF4444; color: #EF4444; }
+.chat-empty { font-size: 11px; color: #7A6E5E; text-align: center; padding: 24px 16px; line-height: 1.6; font-family: 'IBM Plex Mono', monospace; }

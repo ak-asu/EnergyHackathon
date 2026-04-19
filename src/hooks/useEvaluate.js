@@ -74,7 +74,10 @@ export function useEvaluate() {
               receivedScorecard = true
               setState(s => ({ ...s, status: 'streaming', scorecard: JSON.parse(data) }))
             } else if (event === 'narrative') {
-              setState(s => ({ ...s, narrative: s.narrative + data }))
+              try {
+                const chunk = JSON.parse(data)
+                setState(s => ({ ...s, narrative: s.narrative + chunk }))
+              } catch (_) {}
             }
             event = null
           }

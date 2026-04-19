@@ -18,15 +18,18 @@ ALL_TOOLS = [evaluate_site, compare_sites, get_news_digest,
 
 _INTENT_SYSTEM = """Classify the user query into exactly one intent.
 Reply with a JSON object with two fields:
-  "intent": one of "stress_test" | "compare" | "timing" | "explanation"
-  "needs_web_search": true if query uses forward-looking language (will, forecast, policy, regulation) or asks about current events
+  "intent": one of "stress_test" | "compare" | "timing" | "explanation" | "config"
+  "needs_web_search": true if query uses forward-looking language or asks about current events
 
 Examples:
 - "What happens if gas prices spike 40%?" → stress_test
 - "Compare sites at 31.9,-102.1 and 32.5,-101.2" → compare
+- "Compare my pins" or "compare these pins" → compare
 - "Should I build now or wait?" → timing
 - "Why is the land score low?" → explanation
-- "What are analysts saying about ERCOT capacity?" → timing + needs_web_search: true
+- "Find 5 sites with gas under $2/MMBtu" → config
+- "Set min composite to 0.8 and max sites to 2" → config
+- "Only show ERCOT sites with weights 40/30/30" → config
 
 Reply only valid JSON, no markdown."""
 
@@ -34,6 +37,18 @@ _SYNTHESIZE_SYSTEM = """You are a senior BTM data center investment analyst.
 You have access to live scoring data, market regime, LMP forecasts, and news.
 Write a concise, direct response. Include specific numbers. Cite news headlines by title when you use them. No hedging.
 Format your response in markdown: **bold** key metrics and numbers; use bullet lists for multiple factors or comparisons; use ## headers to separate major sections when the response spans multiple topics; use tables when comparing two or more options side by side."""
+
+_CONFIG_EXTRACT_SYSTEM = """Extract optimization configuration changes from the user's request.
+Return a JSON object with only the fields explicitly requested:
+- max_sites (int): number of optimal sites to find
+- gas_price_max (float): maximum gas price in $/MMBtu
+- power_cost_max (float): maximum power cost in $/MWh
+- acres_min (int): minimum parcel size in acres
+- min_composite (float, 0-1): minimum composite score threshold
+- market_filter (list[str]): markets to include, e.g. ["ERCOT"]
+- weights (list of 3 floats): [land, gas, power] weights that sum to 1
+
+Return only valid JSON. Omit fields not mentioned. No markdown."""
 
 
 class AgentState(TypedDict):
@@ -119,7 +134,10 @@ def compare_node(state: AgentState) -> dict:
 
     if not coords:
         ctx = state.get('context', {})
-        if ctx.get('scorecard'):
+        pins = ctx.get('pins', [])
+        if pins:
+            coords = [{'lat': float(p['lat']), 'lon': float(p['lon'])} for p in pins[:5]]
+        elif ctx.get('scorecard'):
             sc = ctx['scorecard']
             coords = [{'lat': sc['lat'], 'lon': sc['lon']}]
 
@@ -150,20 +168,30 @@ def timing_node(state: AgentState) -> dict:
     results.append({'regime': regime.label, 'proba': regime.proba})
     citations.append(f"Regime: {regime.label}")
 
-    news = get_news_digest.invoke({})
-    if news:
-        results.append({'news': news})
-        for item in news[:3]:
-            citations.append(item.get('title', ''))
+    try:
+        news = get_news_digest.invoke({})
+        if news:
+            results.append({'news': news})
+            for item in news[:3]:
+                citations.append(item.get('title', ''))
+    except Exception:
+        pass
 
-    fc = get_lmp_forecast.invoke({'node': 'HB_WEST', 'horizon': 72})
-    results.append({'forecast': fc})
-    citations.append(f"HB_WEST 72h P50 avg: ${sum(fc['p50'])/len(fc['p50']):.1f}/MWh")
+    try:
+        fc = get_lmp_forecast.invoke({'node': 'HB_WEST', 'horizon': 72})
+        if fc and fc.get('p50'):
+            results.append({'forecast': fc})
+            citations.append(f"HB_WEST 72h P50 avg: ${sum(fc['p50'])/len(fc['p50']):.1f}/MWh")
+    except Exception:
+        pass
 
     if state.get('needs_web_search'):
-        search_result = web_search.invoke({'query': f"ERCOT BTM natural gas data center {state['query']}"})
-        results.append({'web_search': search_result})
-        citations.append("(web search results included)")
+        try:
+            search_result = web_search.invoke({'query': f"ERCOT BTM natural gas data center {state['query']}"})
+            results.append({'web_search': search_result})
+            citations.append("(web search results included)")
+        except Exception:
+            pass
 
     return {'tool_results': results, 'citations': citations}
 
@@ -197,6 +225,30 @@ def explanation_node(state: AgentState) -> dict:
     return {'tool_results': results, 'citations': citations}
 
 
+# ── Node: config ─────────────────────────────────────────────────────────────
+
+def config_node(state: AgentState) -> dict:
+    """Extract config changes from natural language and return them as tool_results."""
+    import json
+    llm = _get_llm()
+    resp = llm.invoke([
+        SystemMessage(content=_CONFIG_EXTRACT_SYSTEM),
+        HumanMessage(content=state['query']),
+    ])
+    try:
+        config_update = json.loads(resp.content)
+        if not isinstance(config_update, dict):
+            config_update = {}
+    except Exception:
+        config_update = {}
+
+    citation = ('Config updated: ' + ', '.join(f'{k}={v}' for k, v in config_update.items())) if config_update else 'No config changes extracted'
+    return {
+        'tool_results': [{'config_update': config_update}],
+        'citations': [citation],
+    }
+
+
 # ── Node: synthesize ────────────────────────────────────────────────────────
 
 def synthesize_node(state: AgentState) -> dict:
@@ -207,15 +259,33 @@ def synthesize_node(state: AgentState) -> dict:
     context_str = json.dumps(state.get('tool_results', []), indent=2, default=str)
     citations_str = '\n'.join(f"- {c}" for c in state.get('citations', []) if c)
 
+    ctx = state.get('context', {})
+    chips = ctx.get('chips', [])
+    region = ctx.get('region', None)
+
+    chip_str = ''
+    if chips:
+        chip_str = '\nActive map context:\n' + json.dumps(chips, indent=2, default=str)
+
+    region_str = ''
+    if region:
+        region_str = f'\nSelected map region: {json.dumps(region, default=str)}'
+
+    history = ctx.get('history', [])
+    history_str = ''
+    if history:
+        history_str = '\n\nConversation history (oldest first):\n'
+        history_str += '\n'.join(f"{m['role'].upper()}: {m['content']}" for m in history)
+
     user_content = f"""User question: {state['query']}
 
-Intent classified as: {state.get('intent', 'explanation')}
+Intent: {state.get('intent', 'explanation')}
 
 Data gathered:
 {context_str}
 
 Sources cited:
-{citations_str}
+{citations_str}{chip_str}{region_str}{history_str}
 
 Answer the user's question using the data above. Be specific and quantitative."""
 
@@ -241,6 +311,7 @@ def build_agent() -> StateGraph:
     graph.add_node('compare',      compare_node)
     graph.add_node('timing',       timing_node)
     graph.add_node('explanation',  explanation_node)
+    graph.add_node('config',       config_node)
     graph.add_node('synthesize',   synthesize_node)
 
     graph.set_entry_point('parse_intent')
@@ -249,9 +320,11 @@ def build_agent() -> StateGraph:
         'compare':      'compare',
         'timing':       'timing',
         'explanation':  'explanation',
+        'config':       'config',
     })
     for intent_node in ('stress_test', 'compare', 'timing', 'explanation'):
         graph.add_edge(intent_node, 'synthesize')
+    graph.add_edge('config', 'synthesize')
     graph.add_edge('synthesize', END)
 
     return graph.compile()

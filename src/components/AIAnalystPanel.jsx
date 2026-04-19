@@ -1,23 +1,20 @@
-import BriefingCard from './BriefingCard'
 import AgentChat from './AgentChat'
-import { useRegime } from '../hooks/useRegime'
+import ContextChipBar from './ContextChipBar'
 
-export default function AIAnalystPanel({ open, onClose, context, chips, onRemoveChip, ask, reset, tokens, citations, agentStatus }) {
-  const regime = useRegime()
-  if (!open) return null
+export default function AIAnalystPanel({ open, onClose, context, chips, onRemoveChip }) {
   return (
-    <div className="ai-analyst-panel">
+    <div className="ai-analyst-panel" style={{ display: open ? undefined : 'none' }}>
       <div className="ai-panel-header">
         <span className="ai-panel-title">⚡ AI Analyst</span>
         <button className="ai-panel-close" onClick={onClose}>✕</button>
       </div>
+      {chips && chips.length > 0 && (
+        <div className="ai-panel-chips">
+          <ContextChipBar chips={chips} onRemove={onRemoveChip} />
+        </div>
+      )}
       <div className="ai-panel-body">
-        <BriefingCard regime={regime} />
-        <div className="ai-panel-divider" />
-        <AgentChat
-          context={context} chips={chips} onRemoveChip={onRemoveChip}
-          ask={ask} reset={reset} tokens={tokens} citations={citations} status={agentStatus}
-        />
+        <AgentChat context={context} />
       </div>
     </div>
   )

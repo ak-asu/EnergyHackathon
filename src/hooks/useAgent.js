@@ -18,9 +18,14 @@ export function useAgent() {
       body: JSON.stringify({ query, context }),
       signal: controller.signal,
     }).then(res => {
+      if (!res.ok) {
+        setState(s => ({ ...s, status: 'error', error: `API ${res.status} — is the backend running?` }))
+        return
+      }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let event = null
 
       const read = () => reader.read().then(({ done, value }) => {
         if (done) { setState(s => ({ ...s, status: 'done' })); return }
@@ -28,17 +33,24 @@ export function useAgent() {
         const lines = buffer.split('\n')
         buffer = lines.pop()
 
-        let event = null
         for (const line of lines) {
           if (line.startsWith('event: ')) event = line.slice(7).trim()
           if (line.startsWith('data: ') && event) {
-            const data = line.slice(6).trim()
+            const raw = line.slice(6).trim()
             if (event === 'token') {
-              setState(s => ({ ...s, status: 'streaming', tokens: s.tokens + data }))
+              try {
+                const token = JSON.parse(raw)
+                setState(s => ({ ...s, status: 'streaming', tokens: s.tokens + token }))
+              } catch (_) {}
             } else if (event === 'citation') {
-              setState(s => ({ ...s, citations: [...s.citations, data] }))
+              setState(s => ({ ...s, citations: [...s.citations, raw] }))
             } else if (event === 'error') {
-              setState(s => ({ ...s, status: 'error', error: data }))
+              setState(s => ({ ...s, status: 'error', error: raw }))
+            } else if (event === 'config_update') {
+              try {
+                const payload = JSON.parse(raw)
+                window.dispatchEvent(new CustomEvent('collide:set-config', { detail: payload }))
+              } catch (_) {}
             }
             event = null
           }

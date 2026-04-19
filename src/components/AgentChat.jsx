@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
+import { useAgent } from '../hooks/useAgent'
 import MarkdownRenderer from './MarkdownRenderer'
-import ContextChipBar from './ContextChipBar'
+
+const BRIEFING_PROMPT =
+  'Give me a current market briefing: (1) current regime state and what it means for BTM economics, ' +
+  '(2) the strongest siting opportunity right now and why, (3) the top risk to watch.'
 
 function CitationChip({ text }) {
   const isCoord = /^-?\d+\.\d+,-?\d+\.\d+/.test(text)
@@ -13,7 +17,9 @@ function Message({ role, text, citations }) {
   return (
     <div className={`chat-message chat-message--${role}`}>
       <div className="chat-bubble">
-        {role === 'assistant' ? <MarkdownRenderer>{text}</MarkdownRenderer> : text}
+        {role === 'assistant'
+          ? <MarkdownRenderer>{text}</MarkdownRenderer>
+          : text}
       </div>
       {citations && citations.length > 0 && (
         <div className="chat-citations">
@@ -24,27 +30,33 @@ function Message({ role, text, citations }) {
   )
 }
 
-export default function AgentChat({ context, chips = [], onRemoveChip, ask, reset, tokens, citations, status }) {
+export default function AgentChat({ context }) {
   const [input, setInput] = useState('')
   const [history, setHistory] = useState([])
+  const { tokens, citations, status, ask, reset } = useAgent()
   const endRef = useRef(null)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [tokens, history])
 
-  const submit = () => {
-    if (!input.trim() || status === 'loading' || status === 'streaming') return
-    const q = input.trim()
+  const submit = (text) => {
+    const q = (text || input).trim()
+    if (!q || status === 'loading' || status === 'streaming') return
+    const contextWithHistory = {
+      ...context,
+      history: history.slice(-6).map(m => ({ role: m.role, content: m.text })),
+    }
     setHistory(h => [...h, { role: 'user', text: q }])
     setInput('')
     reset()
-    const enrichedContext = {
-      ...context,
-      chips: chips.map(c => ({ type: c.type, payload: c.payload })),
-      region: chips.find(c => c.type === 'region')?.payload ?? null,
-    }
-    ask(q, enrichedContext)
+    ask(q, contextWithHistory)
+  }
+
+  const clearChat = () => {
+    reset()
+    setHistory([])
+    setInput('')
   }
 
   const onKey = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }
@@ -56,9 +68,32 @@ export default function AgentChat({ context, chips = [], onRemoveChip, ask, rese
     }
   }, [status])
 
+  const busy = status === 'loading' || status === 'streaming'
+
   return (
     <div className="agent-chat">
+      <div className="chat-quick-prompts">
+        <button
+          className="chat-quick-chip"
+          onClick={() => submit(BRIEFING_PROMPT)}
+          disabled={busy}
+        >
+          Market Briefing
+        </button>
+        <button
+          className="chat-quick-chip chat-quick-chip--ghost"
+          onClick={clearChat}
+          disabled={busy}
+          title="Clear chat"
+        >
+          Clear
+        </button>
+      </div>
+
       <div className="chat-messages">
+        {history.length === 0 && status === 'idle' && (
+          <div className="chat-empty">Ask about sites, timing, stress scenarios, or click Market Briefing for a market overview.</div>
+        )}
         {history.map((msg, i) => (
           <Message key={i} role={msg.role} text={msg.text} citations={msg.citations} />
         ))}
@@ -78,13 +113,11 @@ export default function AgentChat({ context, chips = [], onRemoveChip, ask, rese
         )}
         {status === 'error' && (
           <div className="chat-message chat-message--error">
-            <div className="chat-bubble">Error: check ANTHROPIC_API_KEY and backend logs.</div>
+            <div className="chat-bubble">Error — check ANTHROPIC_API_KEY and backend logs.</div>
           </div>
         )}
         <div ref={endRef} />
       </div>
-
-      <ContextChipBar chips={chips} onRemove={onRemoveChip || (() => {})} />
 
       <div className="chat-input-row">
         <textarea
@@ -94,12 +127,11 @@ export default function AgentChat({ context, chips = [], onRemoveChip, ask, rese
           onKeyDown={onKey}
           placeholder="Ask about sites, timing, stress scenarios, or economics…"
           rows={2}
-          disabled={status === 'loading' || status === 'streaming'}
         />
         <button
           className="chat-send-btn"
-          onClick={submit}
-          disabled={!input.trim() || status === 'loading' || status === 'streaming'}
+          onClick={() => submit()}
+          disabled={!input.trim() || busy}
         >
           →
         </button>
